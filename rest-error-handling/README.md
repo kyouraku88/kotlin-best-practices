@@ -19,11 +19,6 @@ This document is a step-by-step tutorial how the application was developed and t
 
 ## 1. Basic setup, `default error handling`
 
-- create an entity
-- create a repository
-- create a rest controller
-- test the application
-
 ### 1.1 Entity
 
 ```kotlin
@@ -97,7 +92,7 @@ Calling these methods will produce the result:
 }
 ```
 
-Testing an error:
+Try to get a movie that does not exist in the repo:
 
 ```http
 # fail to retrieve movie with id
@@ -128,6 +123,8 @@ The actual mechanism is extremely simple but also very flexible. It gives us:
 
 ### 2.1 Create a custom `response` class and update the `exception`
 
+The exception has to extend `RuntimeExtension`, otherwise throwing this extension by a mock will result in: `Checked exception is invalid for this method!` error. This is because kotlin does not have checked exceptions, but the test nonetheless is expeting it to be declared.
+
 ```kotlin
 data class RestErrorResponse(
         val status: Int,
@@ -136,7 +133,7 @@ data class RestErrorResponse(
 
 class MovieNotFoundException(
         override val message: String
-): Throwable(message)
+): RuntimeException(message)
 ```
 
 ### 2.2 Change the repository throwing the exception
@@ -241,8 +238,8 @@ class MovieControllerTest {
     @LocalServerPort
     private var port: Int = 0
 
-    @Autowired
-    private lateinit var objectMapper: ObjectMapper
+    @MockBean
+    private lateinit var movieRepository: MovieRepository
 
     private val movieId = 1L
     private val movieIdNotFound = 100L
@@ -254,40 +251,52 @@ class MovieControllerTest {
 
     @Test
     fun getMovieById_success() {
-        val expectedResponse = Movie(1L,"First")
+        val expectedResponse = Movie(1L, "First")
 
-        When {
+        whenever(movieRepository.getMovieById(movieId))
+                .thenReturn(expectedResponse)
+
+        val response = When {
             get("/movies/$movieId")
         } Then {
             log().all()
-            statusCode(200)
-            body(Matchers.equalTo(
-              objectMapper.writeValueAsString(expectedResponse))
-            )
+            statusCode(HttpStatus.OK.value())
+        } Extract {
+            body().`as`(Movie::class.java)
         }
+
+        Assertions.assertEquals(expectedResponse, response)
     }
 
     @Test
     fun getMovieById_notFound() {
         val expectedResponse = RestErrorResponse(
                 HttpStatus.NOT_FOUND.value(),
-                "Movie with 100 was not found."
+                "Not found movie"
         )
 
-        When {
+        whenever(movieRepository.getMovieById(movieIdNotFound))
+                .thenThrow(MovieNotFoundException("Not found movie"))
+
+        val response = When {
             get("/movies/$movieIdNotFound")
         } Then {
             log().all()
-            statusCode(404)
-            body(Matchers.equalTo(
-              objectMapper.writeValueAsString(expectedResponse))
-            )
+            statusCode(HttpStatus.NOT_FOUND.value())
+        } Extract {
+            body().`as`(RestErrorResponse::class.java)
         }
+
+        Assertions.assertEquals(expectedResponse, response)
     }
-}
 ```
+
+The `@ExtendWith` annotation is how JUnit 5 extends the behavior of test classes or methods - previously in Junit 4 two types of test extensions were used: test runners and rules. JUnit 5 simplifies this by using the Extension API. On JUnit5 extensions read more [here](https://www.baeldung.com/junit-5-extensions) and on runwith [here](https://www.baeldung.com/junit-5-runwith).  
+The `@SpringBootTest` annotation creates a web server that will be used for testing. In this mode the web environment will be created using a random port which is then injected into the field annotated with `@LocalServerPort`. This port is then used by `RestAssured`.  
+The `@BeforeAll` annotation denotes a function that will be called only once, when the class is initialized, as marked by `@TestInstance`. (In Java this method would have to be static)
 
 - [gradle with junit5](https://www.baeldung.com/junit-5-gradle)
 - [rest-assured](https://github.com/rest-assured/rest-assured/wiki/gettingstarted)
 - [kotlin junit 5 beforeall](https://stackoverflow.com/questions/38516418/what-is-proper-workaround-for-beforeall-in-kotlin)
 - [koltin junit 5 rest assured connection refused](https://stackoverflow.com/questions/32054274/connection-refused-with-rest-assured-junit-test-case)
+- [JUnit 5 extensions](https://www.baeldung.com/junit-5-extensions)

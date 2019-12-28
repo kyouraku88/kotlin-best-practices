@@ -7,13 +7,9 @@ import org.springframework.stereotype.Component
 @Component
 class MovieRepositoryImpl: MovieRepository {
 
-    companion object {
-        val movies = mutableListOf(
-                Movie(1, "First"),
-                Movie(2, "Second")
-        )
-    }
+    val movies = mutableListOf<Movie>()
 
+    @Throws(MovieNotFoundException::class)
     override fun getMovieById(id: Long) =
             movies.find { it.id == id } ?: throw MovieNotFoundException("Movie with $id was not found.")
 

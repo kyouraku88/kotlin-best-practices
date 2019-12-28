@@ -29,6 +29,9 @@ dependencies {
 	testImplementation("io.rest-assured:xml-path:4.1.2")
 	testImplementation("io.rest-assured:json-schema-validator:4.1.2")
 	testImplementation("io.rest-assured:kotlin-extensions:4.1.2")
+	//testImplementation("io.mockk:mockk:1.9.3")
+	testImplementation("com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0")
+	//testImplementation("com.nhaarman:mockito-kotlin:1.6.0")
 	testImplementation("org.junit.jupiter:junit-jupiter-api:5.3.1")
 	testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.3.1")
 }
