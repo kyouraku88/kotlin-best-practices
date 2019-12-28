@@ -7,6 +7,12 @@
     - [1.2 Repository implementation](#12-repository-implementation)
     - [1.3 Controller](#13-controller)
     - [1.4 Manual testing](#14-manual-testing)
+  - [2. ControllerAdvice](#2-controlleradvice)
+    - [2.1 Create a custom response class and update the exception](#21-create-a-custom-response-class-and-update-the-exception)
+    - [2.2 Change the repository throwing the exception](#22-change-the-repository-throwing-the-exception)
+    - [2.3 Create a class annotated with @ControllerAdvice](#23-create-a-class-annotated-with-controlleradvice)
+    - [2.4 Manual testing](#24-manual-testing)
+    - [2.5 Testing with junit 5 and rest-assured](#25-testing-with-junit-5-and-rest-assured)
 
 The application demonstrates the best practices when handling REST errors in a kotlin spring application.  
 This document is a step-by-step tutorial how the application was developed and tested.
@@ -109,3 +115,179 @@ Will result in an error response:
   "path": "/movies/100"
 }
 ```
+
+## 2. ControllerAdvice
+
+The `@ControllerAdvice` annotation allows us to consolidate our multiple, scattered `@ExceptionHandlers` from before into a single, global error handling component.
+
+The actual mechanism is extremely simple but also very flexible. It gives us:
+
+- Full control over the body of the response as well as the status code
+- Mapping of several exceptions to the same method, to be handled together
+- It makes good use of the newer RESTful ResposeEntity response
+
+### 2.1 Create a custom `response` class and update the `exception`
+
+```kotlin
+data class RestErrorResponse(
+        val status: Int,
+        val message: String
+)
+
+class MovieNotFoundException(
+        override val message: String
+): Throwable(message)
+```
+
+### 2.2 Change the repository throwing the exception
+
+```kotlin
+@Component
+class MovieRepositoryImpl: MovieRepository {
+    override fun getMovieById(id: Long) =
+            movies.find { it.id == id } ?:
+              throw MovieNotFoundException("Movie with $id was not found.")
+
+    // the rest of the class is unchanged
+}
+```
+
+### 2.3 Create a class annotated with `@ControllerAdvice`
+
+```kotlin
+@ControllerAdvice
+class RestExceptionHandler: ResponseEntityExceptionHandler {
+    @ExceptionHandler(MovieNotFoundException.class)
+    fun handleNotFound(ex: Exception, request: WebRequest) {
+
+        val errorResponse = RestErrorResponse(
+          HttpStatus.NOT_FOUND.value(),
+          ex.message
+        )
+
+        return ResponseEntity(errorResponse, HttpStatus.NOT_FOUND)
+    }
+}
+```
+
+Creating the `ResponseEntity` object is unnecessary when the function is annotated with `@ResponseBody` and `@ResponseStatus`
+
+```kotlin
+@ControllerAdvice
+class RestExceptionHandler: ResponseEntityExceptionHandler {
+    @ResponseBody
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    @ExceptionHandler(MovieNotFoundException.class)
+    fun handleMovieNotFound(ex: Exception, request: WebRequest) =
+        RestErrorResponse(HttpStatus.NOT_FOUND.value(), ex.message)
+}
+```
+
+This can be further simplified with the `@RestControllerAdvice` which is a combination of `@ControllerAdvice` with `@ResponseBody` automatically added to all the methods annotated with `@ExceptionHandler`.
+
+```kotlin
+@RestControllerAdvice
+class RestExceptionAdvice: ResponseEntityExceptionHandler() {
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    @ExceptionHandler(MovieNotFoundException::class)
+    fun handleMovieNotFound(ex: MovieNotFoundException) =
+            RestErrorResponse(HttpStatus.NOT_FOUND.value(), ex.message)
+}
+```
+
+### 2.4 Manual testing
+
+Testing an error:
+
+```http
+# fail to retrieve movie with id
+GET http://localhost:8080/movies/100
+```
+
+Will result in an error response:
+
+```json
+{
+  "status": 404,
+  "message": "Movie with 100 was not found."
+}
+```
+
+### 2.5 Testing with junit 5 and rest-assured
+
+Add the following dependencies to gradle.build:
+
+```gradle
+dependencies {
+  testImplementation("io.rest-assured:rest-assured:4.1.2")
+  testImplementation("io.rest-assured:spring-mock-mvc:4.1.2")
+  testImplementation("io.rest-assured:json-path:4.1.2")
+  testImplementation("io.rest-assured:xml-path:4.1.2")
+  testImplementation("io.rest-assured:json-schema-validator:4.1.2")
+  testImplementation("io.rest-assured:kotlin-extensions:4.1.2")
+  testImplementation("org.junit.jupiter:junit-jupiter-api:5.3.1")
+  testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.3.1")
+}
+```
+
+Create a test class:
+
+```kotlin
+@ExtendWith(SpringExtension::class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class MovieControllerTest {
+
+    @LocalServerPort
+    private var port: Int = 0
+
+    @Autowired
+    private lateinit var objectMapper: ObjectMapper
+
+    private val movieId = 1L
+    private val movieIdNotFound = 100L
+
+    @BeforeAll
+    fun init() {
+        RestAssured.port = port
+    }
+
+    @Test
+    fun getMovieById_success() {
+        val expectedResponse = Movie(1L,"First")
+
+        When {
+            get("/movies/$movieId")
+        } Then {
+            log().all()
+            statusCode(200)
+            body(Matchers.equalTo(
+              objectMapper.writeValueAsString(expectedResponse))
+            )
+        }
+    }
+
+    @Test
+    fun getMovieById_notFound() {
+        val expectedResponse = RestErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "Movie with 100 was not found."
+        )
+
+        When {
+            get("/movies/$movieIdNotFound")
+        } Then {
+            log().all()
+            statusCode(404)
+            body(Matchers.equalTo(
+              objectMapper.writeValueAsString(expectedResponse))
+            )
+        }
+    }
+}
+```
+
+- [gradle with junit5](https://www.baeldung.com/junit-5-gradle)
+- [rest-assured](https://github.com/rest-assured/rest-assured/wiki/gettingstarted)
+- [kotlin junit 5 beforeall](https://stackoverflow.com/questions/38516418/what-is-proper-workaround-for-beforeall-in-kotlin)
+- [koltin junit 5 rest assured connection refused](https://stackoverflow.com/questions/32054274/connection-refused-with-rest-assured-junit-test-case)

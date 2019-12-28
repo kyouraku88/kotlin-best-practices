@@ -15,7 +15,7 @@ class MovieRepositoryImpl: MovieRepository {
     }
 
     override fun getMovieById(id: Long) =
-            movies.find { it.id == id } ?: throw MovieNotFoundException()
+            movies.find { it.id == id } ?: throw MovieNotFoundException("Movie with $id was not found.")
 
     override fun getMovieByTitle(title: String) =
             movies.find { it.title == title }

@@ -11,3 +11,8 @@ GET http://localhost:8080/movies?title=First
 
 # fail to retrieve movie with id
 GET http://localhost:8080/movies/100
+
+###
+
+# fail to retrieve movie with id
+GET http://localhost:8080/movies/a

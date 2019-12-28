@@ -23,6 +23,14 @@ dependencies {
 	testImplementation("org.springframework.boot:spring-boot-starter-test") {
 		exclude(group = "org.junit.vintage", module = "junit-vintage-engine")
 	}
+	testImplementation("io.rest-assured:rest-assured:4.1.2")
+	testImplementation("io.rest-assured:spring-mock-mvc:4.1.2")
+	testImplementation("io.rest-assured:json-path:4.1.2")
+	testImplementation("io.rest-assured:xml-path:4.1.2")
+	testImplementation("io.rest-assured:json-schema-validator:4.1.2")
+	testImplementation("io.rest-assured:kotlin-extensions:4.1.2")
+	testImplementation("org.junit.jupiter:junit-jupiter-api:5.3.1")
+	testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.3.1")
 }
 
 tasks.withType<Test> {

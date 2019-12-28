@@ -1,3 +1,3 @@
 package hu.balazs.sido.reh.exception
 
-class MovieNotFoundException: Throwable()
+class MovieNotFoundException(override val message: String): Throwable(message)
