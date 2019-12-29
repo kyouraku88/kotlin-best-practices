@@ -8,7 +8,7 @@ data class RestErrorResponse(
         val causes: List<RestErrorCause> = emptyList()
 ) {
     fun toAttributeMap() =
-            mapOf(
+            mutableMapOf(
                     "apiVersion" to apiVersion,
                     "status" to status,
                     "message" to message,

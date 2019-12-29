@@ -1,17 +1,17 @@
 package hu.balazs.sido.reh.controller
 
+import hu.balazs.sido.reh.model.RestErrorCause
+import hu.balazs.sido.reh.model.RestErrorResponse
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.web.servlet.error.DefaultErrorAttributes
 import org.springframework.stereotype.Component
 import org.springframework.web.context.request.WebRequest
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
 
 @Component
 class RestErrorAttributes : DefaultErrorAttributes() {
 
-    companion object {
-        val dateFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss")
-    }
+    @Value("\${rest.api.version}")
+    private lateinit var restApiVersion: String
 
     override fun getErrorAttributes(
             webRequest: WebRequest?,
@@ -19,20 +19,31 @@ class RestErrorAttributes : DefaultErrorAttributes() {
         val errorAttributes =
                 super.getErrorAttributes(webRequest, includeStackTrace)
 
-        // format the timestamp
-        errorAttributes["timestamp"] = LocalDateTime.now().format(dateFormat)
-
-        // add the cause message
-        val rootError = getError(webRequest)
-        rootError.cause?.let {
-            val causeAttributes = mutableMapOf(
-                    "exception" to it::class.simpleName,
-                    "message" to it.message
-            )
-            errorAttributes["cause"] = causeAttributes
+        // fill the errors
+        val causes = mutableListOf<RestErrorCause>()
+        var exception = getError(webRequest)
+        while (exception?.cause != null && exception.cause != exception) {
+            exception.cause?.let {
+                causes.add(
+                        RestErrorCause(
+                                exception = it::class.simpleName,
+                                message = it.message
+                        )
+                )
+            }
+            exception = exception.cause
         }
 
-        return errorAttributes
+        val response = RestErrorResponse(
+                apiVersion = restApiVersion,
+                status = errorAttributes["status"] as Int,
+                message = errorAttributes.getOrDefault(
+                        "message",
+                        "Error while performing request") as String,
+                path = errorAttributes["path"] as String,
+                causes = causes
+        )
+        return response.toAttributeMap()
     }
 
 }

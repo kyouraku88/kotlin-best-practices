@@ -24,6 +24,16 @@ POST http://localhost:8080/movies
 Content-Type: application/json
 
 {
-  "id": 0,
   "title": "Movie title"
+}
+
+###
+
+# fail to save => no title
+POST http://localhost:8080/movies
+Content-Type: application/json
+
+{
+  "id": 0,
+  "title": "  "
 }

@@ -18,9 +18,8 @@
     - [3.2 Customise the response attributes](#32-customise-the-response-attributes)
       - [3.2.1 Basic customisation](#321-basic-customisation)
       - [3.2.2 Advanced customisation](#322-advanced-customisation)
-    - [2.3 Testing](#23-testing)
-      - [2.3.1 Manually](#231-manually)
-      - [2.3.2 With MockMvc](#232-with-mockmvc)
+    - [3.3 Testing](#33-testing)
+    - [4. Validating @RequestBody](#4-validating-requestbody)
 
 The application demonstrates the best practices when handling REST errors in a kotlin spring application.  
 This document is a step-by-step tutorial how the application was developed and tested.
@@ -455,7 +454,7 @@ data class RestErrorResponse(
     val causes: List<RestErrorCause> = emptyList()
 ) {
     fun toAttributeMap() =
-        mapOf(
+        mutableMapOf(
             "apiVersion" to apiVersion,
             "status" to status,
             "message" to message,
@@ -474,54 +473,72 @@ And rewrite the `RestErrorAttributes` to create the attributes using the `RestEr
 
 ```kotlin
 @Component
-class RestErrorAttributes: DefaultErrorAttributes() {
-    companion object {
-        val dateFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss")
-    }
+class RestErrorAttributes : DefaultErrorAttributes() {
+
+    @Value("\${rest.api.version}")
+    private lateinit var restApiVersion: String
 
     override fun getErrorAttributes(
-        webRequest: WebRequest?,
-        includeStackTrace: Boolean): MutableMap<String, Any> {
+            webRequest: WebRequest?,
+            includeStackTrace: Boolean): MutableMap<String, Any> {
         val errorAttributes =
-            super.getErrorAttributes(webRequest, includeStackTrace)
+                super.getErrorAttributes(webRequest, includeStackTrace)
 
         // fill the errors
         val causes = mutableListOf<RestErrorCause>()
         var exception = getError(webRequest)
-        while(exception?.cause != null && exception.cause != exception) {
+        while (exception?.cause != null && exception.cause != exception) {
             exception.cause?.let {
                 causes.add(
-                    RestErrorCause(
-                        exception = it::class.simpleName,
-                        message = it.message
-                    )
+                        RestErrorCause(
+                                exception = it::class.simpleName,
+                                message = it.message
+                        )
                 )
             }
             exception = exception.cause
         }
 
         val response = RestErrorResponse(
-            apiVersion = "WIRED",
-            status = errorAttributes["status"] as Int,
-            message = errorAttributes.getOrDefault("message", "Error while performing request") as String,
-            path = errorAttributes["path"] as String,
-            causes = causes
+                apiVersion = restApiVersion,
+                status = errorAttributes["status"] as Int,
+                message = errorAttributes.getOrDefault(
+                        "message",
+                        "Error while performing request") as String,
+                path = errorAttributes["path"] as String,
+                causes = causes
         )
         return response.toAttributeMap()
     }
 }
 ```
 
-(Exceptions for later use maybe)
+Calling the method `saveMovie` at least 2x will produce a result:
 
-```kotlin
-class MissingValuesException(
-    missingValues: List<String>
-): Throwable("Missing values: $missingValues")
+```http
+# save a movie
+POST http://localhost:8080/movies
+Content-Type: application/json
 
-class ValidationException(
-    field: String
-): Throwable("Error while validating field: $field")
+{
+  "id": 0,
+  "title": "Movie title"
+}
+```
+
+```json
+{
+  "apiVersion": "1.0",
+  "status": 409,
+  "message": "Error while saving movie",
+  "path": "/movies",
+  "causes": [
+    {
+      "exception": "MovieAlreadyExistsException",
+      "message": "Movie with [title=Movie title] already exists"
+    }
+  ]
+}
 ```
 
 To tell spring to omit the stacktrace from the response, add the below line to the `application.properties` file:
@@ -530,82 +547,300 @@ To tell spring to omit the stacktrace from the response, add the below line to t
 server.error.include-stacktrace = never
 ```
 
-### 2.3 Testing
+### 3.3 Testing
 
-#### 2.3.1 Manually
+```kotlin
+@ExtendWith(SpringExtension::class)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class MovieControllerTest {
 
-Calling `getConfigById` without modifying the default attributes will produce a similar response (output of section 2.2.1):
+    @LocalServerPort
+    private var port: Int = 0
 
-- the timestamp is formatted
-- the stacktrace property is set to never
-- the cause is specified
+    @Value("\${rest.api.version}")
+    private lateinit var restApiVersion: String
 
-```json
-{
-    "timestamp": "2019.02.27 12:40:45",
-    "status": 404,
-    "error": "Not found",
-    "message": "Error while loading config with id = a",
-    "path": "/configurations/a",
-    "cause": {
-        "exception": "ConfigNotFoundException",
-        "message": "Configuration with id a is not found"
+    @MockBean
+    private lateinit var movieRepository: MovieRepository
+
+    private val movieId = 1L
+    private val movieIdNotFound = 100L
+    private val movieTitle = "Second"
+
+    @BeforeAll
+    fun init() {
+        RestAssured.port = port
+    }
+
+    @Test
+    fun getMovieById_success() {
+        val expectedResponse = Movie(1L, "First")
+
+        whenever(movieRepository.getMovieById(movieId))
+                .thenReturn(expectedResponse)
+
+        val response = When {
+            get("/movies/$movieId")
+        } Then {
+            statusCode(HttpStatus.OK.value())
+        } Extract {
+            body().`as`(Movie::class.java)
+        }
+
+        Assertions.assertEquals(expectedResponse, response)
+    }
+
+    @Test
+    fun getMovieById_notFound() {
+        val expectedResponse = RestErrorResponse(
+                restApiVersion,
+                HttpStatus.NOT_FOUND.value(),
+                "Error while loading movie",
+                "/movies",
+                listOf(
+                    RestErrorCause(
+                        "MovieNotFoundException",
+                        "Movie with [id=$movieIdNotFound] was not found."
+                    )
+                )
+        )
+
+        whenever(movieRepository.getMovieById(movieIdNotFound))
+                .thenThrow(MovieNotFoundException(movieIdNotFound))
+
+        val response = When {
+            get("/movies/$movieIdNotFound")
+        } Then {
+            statusCode(HttpStatus.NOT_FOUND.value())
+        } Extract {
+            body().`as`(RestErrorResponse::class.java)
+        }
+
+        Assertions.assertEquals(expectedResponse, response)
+    }
+
+
+    @Test
+    fun getMovieByTitle_success() {
+        val expectedResponse = Movie(2L, "Second")
+
+        whenever(movieRepository.getMovieByTitle(movieTitle))
+                .thenReturn(expectedResponse)
+
+        val response = Given {
+            param("title", movieTitle)
+        } When {
+            get("/movies")
+        } Then {
+            statusCode(HttpStatus.OK.value())
+        } Extract {
+            body().`as`(Movie::class.java)
+        }
+
+        Assertions.assertEquals(expectedResponse, response)
+    }
+
+    @Test
+    fun getMovieByTitle_notFound() {
+        val expectedResponse = RestErrorResponse(
+                restApiVersion,
+                HttpStatus.NOT_FOUND.value(),
+                "Movie with title Second was not found",
+                "/movies",
+                emptyList()
+        )
+
+        whenever(movieRepository.getMovieByTitle(movieTitle))
+                .thenReturn(null)
+
+        val response = Given {
+            param("title", movieTitle)
+        } When {
+            get("/movies")
+        } Then {
+            statusCode(HttpStatus.NOT_FOUND.value())
+        } Extract {
+            body().`as`(RestErrorResponse::class.java)
+        }
+
+        Assertions.assertEquals(expectedResponse, response)
+    }
+
+    @Test
+    fun saveMovie_success() {
+        val toSave = Movie(1L, "New movie")
+
+        doNothing().whenever(movieRepository).saveMovie(toSave)
+
+        Given {
+            contentType(MediaType.APPLICATION_JSON_VALUE)
+            body(toSave)
+        } When {
+            post("/movies")
+        } Then {
+            statusCode(HttpStatus.OK.value())
+        }
+    }
+
+    @Test
+    fun saveMovie_conflict() {
+        val toSave = Movie(1L, "New movie")
+
+        val expectedResponse = RestErrorResponse(
+            restApiVersion,
+            HttpStatus.CONFLICT.value(),
+            "Error while saving movie",
+            "/movies",
+            listOf(
+                RestErrorCause(
+                    "MovieAlreadyExistsException",
+                    "Movie with [title=${toSave.title}] already exists"
+                )
+            )
+        )
+
+        whenever(movieRepository.saveMovie(toSave))
+                .thenThrow(MovieAlreadyExistsException("New movie"))
+
+        val response = Given {
+            contentType(MediaType.APPLICATION_JSON_VALUE)
+            body(toSave)
+        } When {
+            post("/movies")
+        } Then {
+            statusCode(HttpStatus.CONFLICT.value())
+        } Extract {
+            body().`as`(RestErrorResponse::class.java)
+        }
+
+        Assertions.assertEquals(expectedResponse, response)
     }
 }
 ```
 
-After changing the default errorAttributes as seen in section 2.2.2, the response becomes:
+### 4. Validating @RequestBody
 
-- the stacktrace property is set to never
+```kotlin
+class MovieValidator: ConstraintValidator<MovieValid, Movie> {
 
-```json
-{
-    "apiVersion": "1.0",
-    "status": 404,
-    "message": "Error while loading config with id = a.",
-    "path": "/configurations/a",
-    "causes": [
-        {
-            "exception": "ConfigNotFoundException",
-            "message": "Configuration with id a is not found"
-        },
-        {
-            "exception": "NumberFormatException",
-            "message": "id is not Numeric"
+    override fun isValid(value: Movie, context: ConstraintValidatorContext): Boolean {
+        var valid = true
+        context.disableDefaultConstraintViolation()
+
+        if (value.title.isBlank()) {
+            valid = false
+            context.buildConstraintViolationWithTemplate(
+                    "Movie title can not be blank"
+            ).addConstraintViolation()
         }
-    ]
+
+        return valid
+    }
 }
 ```
 
-#### 2.3.2 With MockMvc
+```kotlin
+@MustBeDocumented
+@Target(AnnotationTarget.CLASS)
+@Retention(AnnotationRetention.RUNTIME)
+@Constraint(validatedBy = [MovieValidator::class])
+annotation class MovieValid(val message: String = "Invalid parameter",
+                            val groups: Array<KClass<*>> = [],
+                            val payload: Array<KClass<out Payload>> = [])
+```
+
+```kotlin
+@MovieValid
+data class Movie(
+        var id: Long?,
+        val title: String
+)
+```
+
+```kotlin
+@Validated
+@RestController
+@RequestMapping("/movies")
+class MovieController(
+    val movieRepository: MovieRepository
+) {
+    @PostMapping
+    fun saveMovie(@Valid @RequestBody movie: Movie) {
+        try {
+            movieRepository.saveMovie(movie)
+        } catch (ex: Exception) {
+            throw ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Error while saving movie",
+                    ex
+            )
+        }
+    }
+}
+```
+
+```kotlin
+@RestControllerAdvice
+class RestExceptionAdvice: ResponseEntityExceptionHandler() {
+    override fun handleMethodArgumentNotValid(
+            ex: MethodArgumentNotValidException,
+            headers: HttpHeaders,
+            status: HttpStatus,
+            request: WebRequest): ResponseEntity<Any> {
+
+        val response = RestErrorResponse(
+                apiVersion = restApiVersion,
+                status = status.value(),
+                message = "Error while loading movie",
+                path = "/movies",
+                causes = ex.bindingResult.allErrors
+                        .map {
+                            RestErrorCause(
+                                    ex::class.simpleName,
+                                    it.defaultMessage
+                            )
+                        }
+        )
+        return ResponseEntity(response, status)
+    }
+}
+```
 
 ```kotlin
 @Test
-fun testConfigNotFoundException() {
-    whenever(configDao.getConfig(id))
-        .thenThrow(ConfigNotFoundException("No config"))
+fun saveMovie_notValid() {
+    val toSave = Movie(1L, "   ")
 
-    mvc.perform(MockMvcRequestBuilder.get("${HOST}{id}", id))
-        .andDo(MockMvcResultHandlers.print())
-        .andExpect(MockMvcResultMatchers.status().isNotFound)
-        .andExpect(MockMvcResultMatchers.status().reason(
-            "No config"
-        ))
+    val expectedResponse = RestErrorResponse(
+            restApiVersion,
+            HttpStatus.BAD_REQUEST.value(),
+            "Error while saving movie",
+            "/movies",
+            listOf(
+                RestErrorCause(
+                    "MethodArgumentNotValidException",
+                    "Movie title can not be blank"
+                )
+            )
+    )
+
+    whenever(movieRepository.saveMovie(toSave))
+            .thenThrow(MovieAlreadyExistsException(toSave.title))
+
+    val response = Given {
+        contentType(MediaType.APPLICATION_JSON_VALUE)
+        body(toSave)
+    } When {
+        post("/movies")
+    } Then {
+        statusCode(HttpStatus.BAD_REQUEST.value())
+    } Extract {
+        body().`as`(RestErrorResponse::class.java)
+    }
+
+    Assertions.assertEquals(expectedResponse, response)
 }
-```
-
-The 'mock call' produces a similar response:
-
-```text
-MockHttpServletResponse:
-           Status = 404
-    Error message = No config
-          Headers = []
-     Content type = null
-             Body =
-    Forwarded URL = null
-   Redirected URL = null
-          Cookies = []
 ```
 
 - [gradle with junit5](https://www.baeldung.com/junit-5-gradle)
