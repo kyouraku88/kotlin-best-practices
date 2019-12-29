@@ -2,6 +2,7 @@ package hu.balazs.sido.reh.controller
 
 import hu.balazs.sido.reh.model.RestErrorResponse
 import hu.balazs.sido.reh.exception.MovieNotFoundException
+import hu.balazs.sido.reh.model.RestErrorCause
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.ResponseStatus
@@ -14,6 +15,17 @@ class RestExceptionAdvice: ResponseEntityExceptionHandler() {
     @ResponseStatus(HttpStatus.NOT_FOUND)
     @ExceptionHandler(MovieNotFoundException::class)
     fun handleMovieNotFound(ex: MovieNotFoundException) =
-            RestErrorResponse(HttpStatus.NOT_FOUND.value(), ex.message)
+            RestErrorResponse(
+                    apiVersion = "1.0",
+                    status = HttpStatus.NOT_FOUND.value(),
+                    message = "Error while loading movie",
+                    path = "",
+                    causes = listOf(
+                            RestErrorCause(
+                                    ex::class.simpleName,
+                                    ex.message
+                            )
+                    )
+            )
 
 }

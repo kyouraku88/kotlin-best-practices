@@ -16,3 +16,14 @@ GET http://localhost:8080/movies/100
 
 # fail to retrieve movie with id
 GET http://localhost:8080/movies/a
+
+###
+
+# save a movie / send at least 2x to fail saving
+POST http://localhost:8080/movies
+Content-Type: application/json
+
+{
+  "id": 0,
+  "title": "Movie title"
+}

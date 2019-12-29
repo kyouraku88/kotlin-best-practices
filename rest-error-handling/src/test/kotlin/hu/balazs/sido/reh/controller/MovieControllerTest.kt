@@ -7,6 +7,7 @@ import hu.balazs.sido.reh.model.RestErrorResponse
 import hu.balazs.sido.reh.repository.MovieRepository
 import io.restassured.RestAssured
 import io.restassured.module.kotlin.extensions.Extract
+import io.restassured.module.kotlin.extensions.Given
 import io.restassured.module.kotlin.extensions.Then
 import io.restassured.module.kotlin.extensions.When
 import org.junit.jupiter.api.Assertions
@@ -34,6 +35,7 @@ class MovieControllerTest {
 
     private val movieId = 1L
     private val movieIdNotFound = 100L
+    private val movieTitle = "Second"
 
     @BeforeAll
     fun init() {
@@ -59,25 +61,62 @@ class MovieControllerTest {
         Assertions.assertEquals(expectedResponse, response)
     }
 
+//    @Test
+//    fun getMovieById_notFound() {
+//        val expectedResponse = RestErrorResponse(
+//                HttpStatus.NOT_FOUND.value(),
+//                "Not found movie"
+//        )
+//
+//        whenever(movieRepository.getMovieById(movieIdNotFound))
+//                .thenThrow(MovieNotFoundException("Not found movie"))
+//
+//        val response = When {
+//            get("/movies/$movieIdNotFound")
+//        } Then {
+//            log().all()
+//            statusCode(HttpStatus.NOT_FOUND.value())
+//        } Extract {
+//            body().`as`(RestErrorResponse::class.java)
+//        }
+//
+//        Assertions.assertEquals(expectedResponse, response)
+//    }
+
+
     @Test
-    fun getMovieById_notFound() {
-        val expectedResponse = RestErrorResponse(
-                HttpStatus.NOT_FOUND.value(),
-                "Not found movie"
-        )
+    fun getMovieByTitle_success() {
+        val expectedResponse = Movie(2L, "Second")
 
-        whenever(movieRepository.getMovieById(movieIdNotFound))
-                .thenThrow(MovieNotFoundException("Not found movie"))
+        whenever(movieRepository.getMovieByTitle(movieTitle))
+                .thenReturn(expectedResponse)
 
-        val response = When {
-            get("/movies/$movieIdNotFound")
+        val response = Given {
+            param("title", movieTitle)
+        } When {
+            get("/movies")
         } Then {
             log().all()
-            statusCode(HttpStatus.NOT_FOUND.value())
+            statusCode(HttpStatus.OK.value())
         } Extract {
-            body().`as`(RestErrorResponse::class.java)
+            body().`as`(Movie::class.java)
         }
 
         Assertions.assertEquals(expectedResponse, response)
     }
+
+    @Test
+    fun getMovieByTitle_notFound() {
+        whenever(movieRepository.getMovieByTitle(movieTitle))
+                .thenReturn(null)
+
+        Given {
+            param("title", movieTitle)
+        } When {
+            get("/movies")
+        } Then {
+            log().all()
+        }
+    }
+
 }

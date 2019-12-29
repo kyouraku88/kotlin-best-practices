@@ -1,6 +1,6 @@
 package hu.balazs.sido.reh.domain
 
 data class Movie(
-    val id: Long,
+    var id: Long?,
     val title: String
 )

@@ -8,4 +8,5 @@ interface MovieRepository {
 
     fun getMovieByTitle(title: String): Movie?
 
+    fun saveMovie(movie: Movie)
 }
