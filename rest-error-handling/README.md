@@ -19,7 +19,10 @@
       - [3.2.1 Basic customisation](#321-basic-customisation)
       - [3.2.2 Advanced customisation](#322-advanced-customisation)
     - [3.3 Testing](#33-testing)
-    - [4. Validating @RequestBody](#4-validating-requestbody)
+  - [4. Validating @RequestBody](#4-validating-requestbody)
+    - [4.1 Movie class validator](#41-movie-class-validator)
+    - [4.2. Controller and Advice](#42-controller-and-advice)
+    - [4.3. Testing](#43-testing)
 
 The application demonstrates the best practices when handling REST errors in a kotlin spring application.  
 This document is a step-by-step tutorial how the application was developed and tested.
@@ -422,7 +425,6 @@ POST http://localhost:8080/movies
 Content-Type: application/json
 
 {
-  "id": 0,
   "title": "Movie title"
 }
 ```
@@ -521,7 +523,6 @@ POST http://localhost:8080/movies
 Content-Type: application/json
 
 {
-  "id": 0,
   "title": "Movie title"
 }
 ```
@@ -719,7 +720,9 @@ class MovieControllerTest {
 }
 ```
 
-### 4. Validating @RequestBody
+## 4. Validating @RequestBody
+
+### 4.1 Movie class validator
 
 ```kotlin
 class MovieValidator: ConstraintValidator<MovieValid, Movie> {
@@ -750,13 +753,19 @@ annotation class MovieValid(val message: String = "Invalid parameter",
                             val payload: Array<KClass<out Payload>> = [])
 ```
 
+Annotate the Movie class
+
 ```kotlin
 @MovieValid
 data class Movie(
-        var id: Long?,
-        val title: String
+    var id: Long?,
+    val title: String
 )
 ```
+
+### 4.2. Controller and Advice
+
+Add `@Validated` to the Controller class and add `@Valid` before the `@RequestBody`.
 
 ```kotlin
 @Validated
@@ -771,14 +780,16 @@ class MovieController(
             movieRepository.saveMovie(movie)
         } catch (ex: Exception) {
             throw ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Error while saving movie",
-                    ex
+                HttpStatus.CONFLICT,
+                "Error while saving movie",
+                ex
             )
         }
     }
 }
 ```
+
+When the request body is not valid it will throw a `MethodArgumentNotValidException`. If the Controller extends `ResponseEntityExceptionHandler` don't create a new function with and annotate it as `@ExceptionHandler`, but override `handleMethodArgumentNotValid`.
 
 ```kotlin
 @RestControllerAdvice
@@ -790,22 +801,24 @@ class RestExceptionAdvice: ResponseEntityExceptionHandler() {
             request: WebRequest): ResponseEntity<Any> {
 
         val response = RestErrorResponse(
-                apiVersion = restApiVersion,
-                status = status.value(),
-                message = "Error while loading movie",
-                path = "/movies",
-                causes = ex.bindingResult.allErrors
-                        .map {
-                            RestErrorCause(
-                                    ex::class.simpleName,
-                                    it.defaultMessage
-                            )
-                        }
+            apiVersion = restApiVersion,
+            status = status.value(),
+            message = "Error while loading movie",
+            path = "/movies",
+            causes = ex.bindingResult.allErrors
+                    .map {
+                        RestErrorCause(
+                            ex::class.simpleName,
+                            it.defaultMessage
+                        )
+                    }
         )
         return ResponseEntity(response, status)
     }
 }
 ```
+
+### 4.3. Testing
 
 ```kotlin
 @Test
@@ -813,16 +826,16 @@ fun saveMovie_notValid() {
     val toSave = Movie(1L, "   ")
 
     val expectedResponse = RestErrorResponse(
-            restApiVersion,
-            HttpStatus.BAD_REQUEST.value(),
-            "Error while saving movie",
-            "/movies",
-            listOf(
-                RestErrorCause(
-                    "MethodArgumentNotValidException",
-                    "Movie title can not be blank"
-                )
+        restApiVersion,
+        HttpStatus.BAD_REQUEST.value(),
+        "Error while saving movie",
+        "/movies",
+        listOf(
+            RestErrorCause(
+                "MethodArgumentNotValidException",
+                "Movie title can not be blank"
             )
+        )
     )
 
     whenever(movieRepository.saveMovie(toSave))
