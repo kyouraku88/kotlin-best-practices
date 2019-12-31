@@ -1,5 +1,6 @@
 package hu.balazs.sido.reh.controller
 
+import hu.balazs.sido.reh.common.getErrorCauses
 import hu.balazs.sido.reh.model.RestErrorCause
 import hu.balazs.sido.reh.model.RestErrorResponse
 import org.springframework.beans.factory.annotation.Value
@@ -19,21 +20,6 @@ class RestErrorAttributes : DefaultErrorAttributes() {
         val errorAttributes =
                 super.getErrorAttributes(webRequest, includeStackTrace)
 
-        // fill the errors
-        val causes = mutableListOf<RestErrorCause>()
-        var exception = getError(webRequest)
-        while (exception?.cause != null && exception.cause != exception) {
-            exception.cause?.let {
-                causes.add(
-                        RestErrorCause(
-                                exception = it::class.simpleName,
-                                message = it.message
-                        )
-                )
-            }
-            exception = exception.cause
-        }
-
         val response = RestErrorResponse(
                 apiVersion = restApiVersion,
                 status = errorAttributes["status"] as Int,
@@ -41,7 +27,7 @@ class RestErrorAttributes : DefaultErrorAttributes() {
                         "message",
                         "Error while performing request") as String,
                 path = errorAttributes["path"] as String,
-                causes = causes
+                causes = getError(webRequest).getErrorCauses()
         )
         return response.toAttributeMap()
     }

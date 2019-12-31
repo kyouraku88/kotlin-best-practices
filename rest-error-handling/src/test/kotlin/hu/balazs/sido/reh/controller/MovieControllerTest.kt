@@ -196,7 +196,7 @@ class MovieControllerTest {
 
     @Test
     fun saveMovie_notValid() {
-        val toSave = Movie(1L, "   ")
+        val toSave = Movie(null, title = "   ")
 
         val expectedResponse = RestErrorResponse(
                 restApiVersion,

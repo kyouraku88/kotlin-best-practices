@@ -1,5 +1,6 @@
 package hu.balazs.sido.reh.controller
 
+import hu.balazs.sido.reh.common.getErrorCauses
 import hu.balazs.sido.reh.exception.MovieNotFoundException
 import hu.balazs.sido.reh.model.RestErrorCause
 import hu.balazs.sido.reh.model.RestErrorResponse
@@ -26,14 +27,9 @@ class RestExceptionAdvice: ResponseEntityExceptionHandler() {
             RestErrorResponse(
                     apiVersion = restApiVersion,
                     status = HttpStatus.NOT_FOUND.value(),
-                    message = "Error while loading movie",
+                    message = ex.localizedMessage,
                     path = "/movies",
-                    causes = listOf(
-                            RestErrorCause(
-                                    ex::class.simpleName,
-                                    ex.message
-                            )
-                    )
+                    causes = ex.getErrorCauses()
             )
 
     override fun handleMethodArgumentNotValid(
@@ -45,7 +41,7 @@ class RestExceptionAdvice: ResponseEntityExceptionHandler() {
         val response = RestErrorResponse(
                 apiVersion = restApiVersion,
                 status = status.value(),
-                message = "Error while saving movie",
+                message = "Validation error while saving movie",
                 path = "/movies",
                 causes = ex.bindingResult.allErrors
                         .map {
