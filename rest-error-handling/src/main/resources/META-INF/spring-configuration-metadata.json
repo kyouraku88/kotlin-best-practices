@@ -1,0 +1,9 @@
+{
+  "properties": [
+    {
+      "name": "rest.api.version",
+      "type": "java.lang.String",
+      "description": "REST API version."
+    }
+  ]
+}
