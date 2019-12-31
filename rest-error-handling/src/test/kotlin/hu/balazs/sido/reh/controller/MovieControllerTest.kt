@@ -73,14 +73,9 @@ class MovieControllerTest {
         val expectedResponse = RestErrorResponse(
                 restApiVersion,
                 HttpStatus.NOT_FOUND.value(),
-                "Error while loading movie",
+                "Movie with [id=$movieIdNotFound] was not found.",
                 "/movies",
-                listOf(
-                        RestErrorCause(
-                                "MovieNotFoundException",
-                                "Movie with [id=$movieIdNotFound] was not found."
-                        )
-                )
+                emptyList()
         )
 
         whenever(movieRepository.getMovieById(movieIdNotFound))
@@ -201,7 +196,7 @@ class MovieControllerTest {
         val expectedResponse = RestErrorResponse(
                 restApiVersion,
                 HttpStatus.BAD_REQUEST.value(),
-                "Error while saving movie",
+                "Validation error while saving movie",
                 "/movies",
                 listOf(
                         RestErrorCause(
