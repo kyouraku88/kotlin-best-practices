@@ -237,7 +237,78 @@ dependencies {
 }
 ```
 
-Create a test class:
+Unit testing with rest assured MockMvc:
+
+```kotlin
+@ExtendWith(SpringExtension::class)
+@WebMvcTest(MovieController::class)
+@WebAppConfiguration
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class MovieControllerTest {
+
+    private companion object {
+        const val BASE_URL = "movies"
+    }
+
+    @Autowired
+    private lateinit var context: WebApplicationContext
+
+    @Value("\${rest.api.version}")
+    private lateinit var restApiVersion: String
+
+    @MockBean
+    private lateinit var movieRepository: MovieRepository
+
+    private val movieId = 1L
+    private val movieIdNotFound = 100L
+    private val movieTitle = "Second"
+
+    @BeforeAll
+    fun init() {
+        RestAssuredMockMvc.webAppContextSetup(context)
+    }
+
+    @Test
+    fun getMovieById_success() {
+        val expectedResponse = Movie(1L, "First")
+
+        whenever(movieRepository.getMovieById(movieId))
+                .thenReturn(expectedResponse)
+
+        val response = get("$BASE_URL/$movieId")
+        .then()
+                .status(HttpStatus.OK)
+        .extract()
+                .body().`as`(Movie::class.java)
+
+        Assertions.assertEquals(expectedResponse, response)
+    }
+
+    @Test
+    fun getMovieById_notFound() {
+        val expectedResponse = RestErrorResponse(
+                restApiVersion,
+                HttpStatus.NOT_FOUND.value(),
+                "Movie with [id=$movieIdNotFound] was not found.",
+                "/movies",
+                emptyList()
+        )
+
+        whenever(movieRepository.getMovieById(movieIdNotFound))
+                .thenThrow(MovieNotFoundException(movieIdNotFound))
+
+        val response = get("$BASE_URL/$movieIdNotFound")
+        .then()
+                .status(HttpStatus.NOT_FOUND)
+        .extract()
+                .body().`as`(RestErrorResponse::class.java)
+
+        Assertions.assertEquals(expectedResponse, response)
+    }
+}
+```
+
+Integration testing with rest-assured kotlin extensions:
 
 ```kotlin
 @ExtendWith(SpringExtension::class)
@@ -297,6 +368,7 @@ class MovieControllerTest {
 
         Assertions.assertEquals(expectedResponse, response)
     }
+}
 ```
 
 The `@ExtendWith` annotation is how JUnit 5 extends the behavior of test classes or methods - previously in Junit 4 two types of test extensions were used: test runners and rules. JUnit 5 simplifies this by using the Extension API. On JUnit5 extensions read more [here](https://www.baeldung.com/junit-5-extensions) and on runwith [here](https://www.baeldung.com/junit-5-runwith).  
@@ -550,173 +622,89 @@ server.error.include-stacktrace = never
 
 ### 3.3 Testing
 
+Unit testing:
+
 ```kotlin
-@ExtendWith(SpringExtension::class)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class MovieControllerTest {
+@Test
+fun getMovieByTitle_success() {
+    val expectedResponse = Movie(2L, "Second")
 
-    @LocalServerPort
-    private var port: Int = 0
+    whenever(movieRepository.getMovieByTitle(movieTitle))
+            .thenReturn(expectedResponse)
 
-    @Value("\${rest.api.version}")
-    private lateinit var restApiVersion: String
+    val response = given()
+            .param("title", movieTitle)
+    .`when`()
+            .get(BASE_URL)
+    .then()
+            .status(HttpStatus.OK)
+    .extract()
+            .body().`as`(Movie::class.java)
 
-    @MockBean
-    private lateinit var movieRepository: MovieRepository
+    Assertions.assertEquals(expectedResponse, response)
+}
 
-    private val movieId = 1L
-    private val movieIdNotFound = 100L
-    private val movieTitle = "Second"
+@Test
+fun getMovieByTitle_notFound() {
+    whenever(movieRepository.getMovieByTitle(movieTitle))
+            .thenReturn(null)
 
-    @BeforeAll
-    fun init() {
-        RestAssured.port = port
+    given()
+            .param("title", movieTitle)
+    .`when`()
+            .get(BASE_URL)
+    .then()
+            .status(HttpStatus.NOT_FOUND)
+}
+```
+
+Integration testing:
+
+```kotlin
+@Test
+fun getMovieByTitle_success() {
+    val expectedResponse = Movie(2L, "Second")
+
+    whenever(movieRepository.getMovieByTitle(movieTitle))
+            .thenReturn(expectedResponse)
+
+    val response = Given {
+        param("title", movieTitle)
+    } When {
+        get("/movies")
+    } Then {
+        statusCode(HttpStatus.OK.value())
+    } Extract {
+        body().`as`(Movie::class.java)
     }
 
-    @Test
-    fun getMovieById_success() {
-        val expectedResponse = Movie(1L, "First")
+    Assertions.assertEquals(expectedResponse, response)
+}
 
-        whenever(movieRepository.getMovieById(movieId))
-                .thenReturn(expectedResponse)
-
-        val response = When {
-            get("/movies/$movieId")
-        } Then {
-            statusCode(HttpStatus.OK.value())
-        } Extract {
-            body().`as`(Movie::class.java)
-        }
-
-        Assertions.assertEquals(expectedResponse, response)
-    }
-
-    @Test
-    fun getMovieById_notFound() {
-        val expectedResponse = RestErrorResponse(
-                restApiVersion,
-                HttpStatus.NOT_FOUND.value(),
-                "Error while loading movie",
-                "/movies",
-                listOf(
-                    RestErrorCause(
-                        "MovieNotFoundException",
-                        "Movie with [id=$movieIdNotFound] was not found."
-                    )
-                )
-        )
-
-        whenever(movieRepository.getMovieById(movieIdNotFound))
-                .thenThrow(MovieNotFoundException(movieIdNotFound))
-
-        val response = When {
-            get("/movies/$movieIdNotFound")
-        } Then {
-            statusCode(HttpStatus.NOT_FOUND.value())
-        } Extract {
-            body().`as`(RestErrorResponse::class.java)
-        }
-
-        Assertions.assertEquals(expectedResponse, response)
-    }
-
-
-    @Test
-    fun getMovieByTitle_success() {
-        val expectedResponse = Movie(2L, "Second")
-
-        whenever(movieRepository.getMovieByTitle(movieTitle))
-                .thenReturn(expectedResponse)
-
-        val response = Given {
-            param("title", movieTitle)
-        } When {
-            get("/movies")
-        } Then {
-            statusCode(HttpStatus.OK.value())
-        } Extract {
-            body().`as`(Movie::class.java)
-        }
-
-        Assertions.assertEquals(expectedResponse, response)
-    }
-
-    @Test
-    fun getMovieByTitle_notFound() {
-        val expectedResponse = RestErrorResponse(
-                restApiVersion,
-                HttpStatus.NOT_FOUND.value(),
-                "Movie with title Second was not found",
-                "/movies",
-                emptyList()
-        )
-
-        whenever(movieRepository.getMovieByTitle(movieTitle))
-                .thenReturn(null)
-
-        val response = Given {
-            param("title", movieTitle)
-        } When {
-            get("/movies")
-        } Then {
-            statusCode(HttpStatus.NOT_FOUND.value())
-        } Extract {
-            body().`as`(RestErrorResponse::class.java)
-        }
-
-        Assertions.assertEquals(expectedResponse, response)
-    }
-
-    @Test
-    fun saveMovie_success() {
-        val toSave = Movie(1L, "New movie")
-
-        doNothing().whenever(movieRepository).saveMovie(toSave)
-
-        Given {
-            contentType(MediaType.APPLICATION_JSON_VALUE)
-            body(toSave)
-        } When {
-            post("/movies")
-        } Then {
-            statusCode(HttpStatus.OK.value())
-        }
-    }
-
-    @Test
-    fun saveMovie_conflict() {
-        val toSave = Movie(1L, "New movie")
-
-        val expectedResponse = RestErrorResponse(
+@Test
+fun getMovieByTitle_notFound() {
+    val expectedResponse = RestErrorResponse(
             restApiVersion,
-            HttpStatus.CONFLICT.value(),
-            "Error while saving movie",
+            HttpStatus.NOT_FOUND.value(),
+            "Movie with title Second was not found",
             "/movies",
-            listOf(
-                RestErrorCause(
-                    "MovieAlreadyExistsException",
-                    "Movie with [title=${toSave.title}] already exists"
-                )
-            )
-        )
+            emptyList()
+    )
 
-        whenever(movieRepository.saveMovie(toSave))
-                .thenThrow(MovieAlreadyExistsException("New movie"))
+    whenever(movieRepository.getMovieByTitle(movieTitle))
+            .thenReturn(null)
 
-        val response = Given {
-            contentType(MediaType.APPLICATION_JSON_VALUE)
-            body(toSave)
-        } When {
-            post("/movies")
-        } Then {
-            statusCode(HttpStatus.CONFLICT.value())
-        } Extract {
-            body().`as`(RestErrorResponse::class.java)
-        }
-
-        Assertions.assertEquals(expectedResponse, response)
+    val response = Given {
+        param("title", movieTitle)
+    } When {
+        get("/movies")
+    } Then {
+        statusCode(HttpStatus.NOT_FOUND.value())
+    } Extract {
+        body().`as`(RestErrorResponse::class.java)
     }
+
+    Assertions.assertEquals(expectedResponse, response)
 }
 ```
 
